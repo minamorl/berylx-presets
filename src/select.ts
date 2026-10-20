@@ -1,8 +1,18 @@
 import type { SelectDefinition, SelectionRule } from './definitions.js';
-import { assertSync, createPreset, type StageRule } from './internal/builder.js';
+import {
+  assertSync,
+  createPreset,
+  type StageRule,
+} from './internal/builder.js';
 import { Invalid } from './invalid.js';
 import type { Preset } from './preset.js';
-import type { Accepted, Batch, Issue, Rejected, SelectionInput } from './types.js';
+import type {
+  Accepted,
+  Batch,
+  Issue,
+  Rejected,
+  SelectionInput,
+} from './types.js';
 
 export type SelectionPredicate<T> = (value: T) => boolean | Invalid;
 
@@ -50,8 +60,14 @@ function condition<I, T extends I>(
         // a guard, the public definition requires I to already satisfy T.
         const result = rule.test(row.entry.value as T);
         assertSync(result);
-        if (typeof result !== 'boolean' && (guard || !(result instanceof Invalid))) {
-          throw new TypeError('Selection callbacks must return boolean' + (guard ? '' : ' or Invalid'));
+        if (
+          typeof result !== 'boolean' &&
+          (guard || !(result instanceof Invalid))
+        ) {
+          throw new TypeError(
+            'Selection callbacks must return boolean' +
+              (guard ? '' : ' or Invalid'),
+          );
         }
         if (result !== true) {
           const issue: Issue = {
@@ -62,7 +78,9 @@ function condition<I, T extends I>(
           };
           next = {
             ...next,
-            rows: next.rows.map((current, index) => index === position ? { ...current, issue } : current),
+            rows: next.rows.map((current, index) =>
+              index === position ? { ...current, issue } : current,
+            ),
           };
           context.issue(issue);
         }
@@ -87,33 +105,59 @@ export function select<I, N extends I = I>(
   if (guard) {
     const direct = typeof guard === 'function';
     const name = direct ? 'guard' : guard.name;
-    const reason = 'guardFailure' in definition ? definition.guardFailure : undefined;
-    rules.push(condition<I, I>({
-      name,
-      test: direct ? guard : guard.test,
-      code: reason?.code ?? 'guard_failed',
-      message: reason?.message ?? `${name} did not match`,
-    }, true));
+    const reason =
+      'guardFailure' in definition ? definition.guardFailure : undefined;
+    rules.push(
+      condition<I, I>(
+        {
+          name,
+          test: direct ? guard : guard.test,
+          code: reason?.code ?? 'guard_failed',
+          message: reason?.message ?? `${name} did not match`,
+        },
+        true,
+      ),
+    );
   }
   if (Array.isArray(definition.rules)) {
-    for (const rule of definition.rules) rules.push(condition<I, N>({ ...rule }));
+    for (const rule of definition.rules)
+      rules.push(condition<I, N>({ ...rule }));
   } else {
     // Array.isArray does not narrow readonly arrays out of this union. This is
     // the local dynamic-definition boundary; named arrays took the branch above.
-    const predicates = definition.rules as Readonly<Record<string, SelectionPredicate<N>>>;
+    const predicates = definition.rules as Readonly<
+      Record<string, SelectionPredicate<N>>
+    >;
     for (const [name, test] of Object.entries(predicates)) {
-      rules.push(condition<I, N>({ name, test, code: 'condition_failed', message: `${name} did not match` }));
+      rules.push(
+        condition<I, N>({
+          name,
+          test,
+          code: 'condition_failed',
+          message: `${name} did not match`,
+        }),
+      );
     }
   }
 
   return createPreset<SelectionInput<I>, Batch<N>, SelectionWork<I>>({
     name: definition.name,
     prepare(input) {
-      const batch: Batch<I> = 'accepted' in input ? input : {
-        accepted: input.map((value, index) => ({ index, input: value, value })),
-        rejected: [],
+      const batch: Batch<I> =
+        'accepted' in input
+          ? input
+          : {
+              accepted: input.map((value, index) => ({
+                index,
+                input: value,
+                value,
+              })),
+              rejected: [],
+            };
+      return {
+        rows: batch.accepted.map((entry) => ({ entry, issue: null })),
+        rejected: batch.rejected,
       };
-      return { rows: batch.accepted.map((entry) => ({ entry, issue: null })), rejected: batch.rejected };
     },
     rules,
     finish(work) {
@@ -125,7 +169,11 @@ export function select<I, N extends I = I>(
           // successful output-narrowing boundary (I already extends N otherwise).
           accepted.push(entry as Accepted<N>);
         } else {
-          rejected.push({ index: entry.index, input: entry.input, issues: [issue] });
+          rejected.push({
+            index: entry.index,
+            input: entry.input,
+            issues: [issue],
+          });
         }
       }
       return { accepted, rejected };

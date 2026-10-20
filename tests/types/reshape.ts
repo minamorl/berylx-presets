@@ -5,22 +5,41 @@ import { reshape, reshapeMany } from '../../src/reshape.js';
 import type { Batch } from '../../src/types.js';
 
 type Input = { readonly id: string; readonly age?: number };
-type Output = { readonly id: number; readonly profile: { readonly label: string }; readonly age: number };
+type Output = {
+  readonly id: number;
+  readonly profile: { readonly label: string };
+  readonly age: number;
+};
 
 export const valid: ReshapeDefinition<Input, Output> = {
-  name: 'person', fields: {
-    id: field('id', (input) => /^\d+$/.test(input.id) ? Number(input.id) : invalid('id', 'invalid')),
+  name: 'person',
+  fields: {
+    id: field('id', (input) =>
+      /^\d+$/.test(input.id) ? Number(input.id) : invalid('id', 'invalid'),
+    ),
     profile: { label: field('label', (input) => input.id) },
-    age: field('age', (input) => input.age, { default: 0, validate: [
-      { name: 'positive', check: (age) => age >= 0 ? undefined : invalid('age', 'invalid') },
-    ] }),
+    age: field('age', (input) => input.age, {
+      default: 0,
+      validate: [
+        {
+          name: 'positive',
+          check: (age) => (age >= 0 ? undefined : invalid('age', 'invalid')),
+        },
+      ],
+    }),
   },
 };
 
 export const single: Preset<Input, Output> = reshape(valid);
 export const many: Preset<readonly Input[], Batch<Output>> = reshapeMany(valid);
 const next = reshape<Output, { display: string }>({
-  name: 'display', fields: { display: field('display', (person) => `${person.profile.label}:${person.age}`) },
+  name: 'display',
+  fields: {
+    display: field(
+      'display',
+      (person) => `${person.profile.label}:${person.age}`,
+    ),
+  },
 });
 export const composed: Preset<Input, { display: string }> = single.then(next);
 const result = composed.run({ id: '1' });
@@ -41,17 +60,23 @@ if (batch.ok) {
 reshape<Input, Output>({
   name: 'missing',
   // @ts-expect-error Every output key must have a rule.
-  fields: { id: field('id', () => 1), profile: { label: field('label', () => '') } },
+  fields: {
+    id: field('id', () => 1),
+    profile: { label: field('label', () => '') },
+  },
 });
 reshapeMany<Input, Output>({
-  name: 'wrong', fields: {
+  name: 'wrong',
+  fields: {
     // @ts-expect-error Explicit conversion to number is required.
     id: field('id', (input) => input.id),
-    profile: { label: field('label', () => '') }, age: field('age', () => 0),
+    profile: { label: field('label', () => '') },
+    age: field('age', () => 0),
   },
 });
 reshape<Input, Output>({
-  name: 'nested', fields: {
+  name: 'nested',
+  fields: {
     id: field('id', () => 1),
     // @ts-expect-error Nested required label cannot be omitted.
     profile: {},
@@ -64,12 +89,16 @@ reshape<null, { optional?: string }>({
   fields: {},
 });
 export const optional = reshape<null, { optional?: string }>({
-  name: 'optional', fields: { optional: field<null, string | undefined>('optional', () => undefined, {
-    default: undefined,
-  }) },
+  name: 'optional',
+  fields: {
+    optional: field<null, string | undefined>('optional', () => undefined, {
+      default: undefined,
+    }),
+  },
 });
 reshape<null, { count: number }>({
-  name: 'default', fields: {
+  name: 'default',
+  fields: {
     // @ts-expect-error Default and reader must match the output type.
     count: field('count', () => 1, { default: '1' }),
   },
@@ -83,13 +112,19 @@ many.run([{ id: 1 }]);
 // @ts-expect-error Reshape outputs are objects.
 reshape<string, number>({ name: 'primitive', fields: {} });
 
-export const wholeValues = reshape<null, { values: readonly number[]; fn: () => string }>({
-  name: 'whole', fields: {
-    values: field<null, readonly number[]>('values', () => [1, 2]), fn: field('fn', () => () => 'value'),
+export const wholeValues = reshape<
+  null,
+  { values: readonly number[]; fn: () => string }
+>({
+  name: 'whole',
+  fields: {
+    values: field<null, readonly number[]>('values', () => [1, 2]),
+    fn: field('fn', () => () => 'value'),
   },
 });
 reshape<null, { values: readonly number[] }>({
-  name: 'array', fields: {
+  name: 'array',
+  fields: {
     // @ts-expect-error Arrays require a whole-value field.
     values: {},
   },

@@ -1,26 +1,13 @@
-# Phase 2 implementation contract
+# API contract
 
-Status: phase 1 shared core is implemented; this document fixes the interfaces
-for the two phase 2 owners. No reshape/select runtime stub exists.
+All APIs below are exported by `@minamorl/berylx-presets`. The implementation uses
+native `Task<Frame>` and `Sequence<Frame>` from the shared Berylx runtime.
 
-## Ownership and integration
+## Preset and execution
 
-| Owner | May write | Imports shared code from |
-| --- | --- | --- |
-| reshape worker | `src/reshape.ts`, `tests/reshape.test.ts`, `tests/types/reshape.ts` | `definitions.ts`, `types.ts`, `invalid.ts`, `internal/builder.ts` |
-| select worker | `src/select.ts`, `tests/select.test.ts`, `tests/types/select.ts` | same shared modules |
-| phase 3 root integration | `src/index.ts`, package exports if needed, examples/comparison | both completed modules |
-
-Phase 2 must not modify shared files, manifests, lockfile, core tests, fixtures,
-or this contract. Report a real shared-contract defect to the root. Tests import
-their own source module directly; index integration waits for both owners.
-No worker redispatch, commit, push, publish, or out-of-worktree write.
-
-## Published core (already implemented)
-
-`Preset<I, O>` is a type exported by the package. `preset.then(next)` accepts a
-`Preset<O, N>` (including a broader input type) and returns `Preset<I, N>`.
-An incompatible connection fails under strict TypeScript without caller casts.
+`Preset<I, O>` is a public type, created by `reshape`, `reshapeMany` or `select`.
+`.then(next: Preset<O, N>)` returns `Preset<I, N>`; a next stage accepting a broader
+input is also allowed. Incompatible wiring is a type error.
 
 ```ts
 interface CompiledPreset {
@@ -34,37 +21,18 @@ type PresetResult<O> =
 // preset.run(input: I): PresetResult<O>
 ```
 
-`compile` creates an initial state and a native `Sequence`; no reader, predicate,
-validation, prepare, or finish callback runs. `Graph.from(compiled.node)` works,
-and `EffectTree.dryRun` lists the same tasks. `run` snapshots input with native
-`Focus.of`, then calls native `Sequence.call`
-(which invokes Berylx's EffectTree), retaining the original native result.
-There is no separate executor or custom AST.
+Every stage is `name:prepare -> name:rule... -> name:result`. Compile constructs
+this structure and initial state without running callbacks. `Graph.from(node)`
+and `EffectTree.dryRun(node, initialState)` inspect it. `.run` snapshots input with
+native Focus, then calls native Sequence. No separate AST or executor exists.
+The original native result remains available alongside successful typed output.
 
-All nodes use the same `Frame` type throughout composition:
+`Root.of(initialState).pipe(node)` accepts the compiled node directly and commits
+only on success. Its `Result<Frame>` has an intentionally opaque `current` slot;
+`.run` exposes typed O. The [pipeline example](../examples/pipeline.ts) demonstrates
+both paths without consumer assertions.
 
-```ts
-interface Frame {
-  readonly input: unknown;             // original input to the entire pipeline
-  readonly current: unknown;           // latest completed stage output
-  readonly work: unknown;              // current stage's partial working state
-  readonly issues: readonly Issue[];   // accumulated recoverable diagnostics
-  readonly location: Location | null;
-}
-interface Location {
-  readonly preset: string;
-  readonly rule: string;
-  readonly path: readonly (string | number)[];
-  readonly index?: number;             // original array index
-}
-```
-
-Only builder boundaries cast the opaque Frame slots to stage I/O/work types.
-Phase 2 may use documented internal casts at dynamic definition traversal,
-output-object assembly, or the successful type-guard boundary. Keep these
-checked boundaries local; application examples must not need assertions.
-
-## Batch, issues, explicit invalid values
+## Batch and diagnostics
 
 ```ts
 interface Issue {
@@ -73,41 +41,45 @@ interface Issue {
   readonly code: string;
   readonly message: string;
 }
+interface Accepted<T> {
+  readonly index: number;
+  readonly input: unknown;
+  readonly value: T;
+}
+interface Rejected {
+  readonly index: number;
+  readonly input: unknown;
+  readonly issues: readonly Issue[];
+}
 interface Batch<T> {
-  readonly accepted: readonly { readonly index: number; readonly input: unknown; readonly value: T }[];
-  readonly rejected: readonly { readonly index: number; readonly input: unknown; readonly issues: readonly Issue[] }[];
+  readonly accepted: readonly Accepted<T>[];
+  readonly rejected: readonly Rejected[];
 }
 type SelectionInput<I> = readonly I[] | Batch<I>;
 ```
 
-`input` in each entry is the source before any conversion; never replace it with
-the converted value during selection. The source type is intentionally `unknown`
-because a pipeline may have heterogeneous original inputs. Paths address output
-fields; the original row index is separate. Keep source order among accepted
-entries and among newly rejected entries. Keep inherited rejections first,
-unchanged, then append new rejections in source order.
+Index and input identify the original element before transformation. Selection
+preserves both, including after reshape. Input is unknown because original
+sources may differ from current typed values. Paths address output fields; row
+index is separate. Accepted entries retain source order. Rejections retain
+inherited records first, then new rejections in source order.
 
-`invalid(code, message)` returns an `Invalid` instance. It is a returned value,
-not a thrown error. Single-record reshape returns it to the builder to become
-native Err. Batch operations collect expected invalid results into rejections
-and continue. A callback that throws, even if it throws an Invalid, fails the
-entire workflow; do not convert unexpected exceptions into rejected rows.
-Empty input and all-rejected input yield successful empty-accepted batches.
+`invalid(code, message)` returns an `Invalid` value for expected data failure:
+single reshape becomes native Err; batch operations reject the element and
+continue. Each row records its first failure and skips later rules. Throwing
+anything, including an Invalid, fails the entire workflow. Empty input and
+all-rejected input yield successful batches with empty accepted arrays.
 
-## Reshape API (implement in src/reshape.ts)
+## Reshape definitions
 
 ```ts
-export function reshape<I, O extends object>(
-  definition: ReshapeDefinition<I, O>,
-): Preset<I, O>;
-export function reshapeMany<I, O extends object>(
-  definition: ReshapeDefinition<I, O>,
-): Preset<readonly I[], Batch<O>>;
-```
+reshape<I, O extends object>(definition: ReshapeDefinition<I, O>): Preset<I, O>;
+reshapeMany<I, O extends object>(definition: ReshapeDefinition<I, O>): Preset<readonly I[], Batch<O>>;
 
-The actual shared types and `field` helper live in `definitions.ts`:
-
-```ts
+interface ReshapeDefinition<I, O extends object> {
+  readonly name: string;
+  readonly fields: Shape<I, O>;
+}
 interface Validation<T> {
   readonly name: string;
   readonly check: (value: T) => Invalid | void;
@@ -116,67 +88,80 @@ interface FieldOptions<T> {
   readonly default?: T;
   readonly validate?: readonly Validation<T>[];
 }
-interface Field<I, T> {
-  readonly [FIELD]: true;
-  readonly name: string;
-  readonly read: (input: I) => T | undefined | Invalid;
-  readonly options: FieldOptions<T>;
-}
-// field<I,T>(name, read, options?): Field<I,T>
-// Shape<I,O> maps EVERY key K of O to Field<I,O[K]> or a nested Shape.
-// Arrays/functions are whole-value fields, never nested shapes.
-interface ReshapeDefinition<I, O extends object> {
-  readonly name: string;
-  readonly fields: Shape<I, O>;
-}
+// field<I,T>(name, read: (input:I) => T | undefined | Invalid, options?): Field<I,T>
 ```
 
-Use `FIELD` to distinguish a field from a nested shape. Traverse own enumerable
-string keys depth-first in definition order. Each leaf has a native Task using
-the field's name and output path. Each validation has another native Task named
-`field.name/validation.name`, immediately after its field, in array order.
-Thus the graph exposes validations as well as conversions. Defaults run within
-their corresponding field task. Do not perform the entire transform in prepare.
+Shape maps every output key, including optional ones, to `Field<I, O[K]>` or a
+nested shape. Missing keys and wrong reader/default types are compiler errors.
+There is no implicit coercion. All readers, including nested ones, receive the
+original I for that stage. The [paired consumer](../fixtures/presets.ts) contains
+a typed nested definition with defaults and validation.
 
-A reader always receives the original single-record I, including nested fields.
-It runs once per still-active row per field. Return Invalid to reject that row
-and skip its remaining fields/checks. Use the first expected invalid per row;
-continue with other rows. A single invalid stops the single-record workflow.
+Supported shapes are string/number-keyed records with own enumerable string
+keys in the definition. Traversal is depth-first in Object.entries order;
+integer-like keys follow JavaScript's numeric ordering. Numeric keys appear as
+strings in diagnostic paths. Symbol-keyed shapes and root arrays/functions are
+rejected statically. Nested arrays/functions require whole-value `field(...)`
+leaves; whole-value fields can also return objects with symbol keys. Ordinary
+records and array-valued leaves remain supported. Definitions must not hide
+required fields on prototypes or nonenumerable properties.
 
-Default rules are explicit: only `undefined` triggers a default. Test presence
-using `Object.hasOwn(field.options, 'default')`; `null`, `0`, `false`, and `''`
-are actual values. Without a default, undefined is `invalid('missing', 'Value is required')`.
-An output that intentionally includes undefined uses an explicit
-`field<I, string | undefined>('optional', read, { default: undefined })`.
-Even optional output keys need a rule, so omissions remain compiler errors.
-Run validations on the defaulted/converted value, and store the value before
-validation so failure partial state includes it. There is no implicit coercion.
-Validation success returns undefined; expected failure returns Invalid.
+Only undefined triggers a default, detected by presence of `default` in options.
+Null, false, zero and empty string remain values. Undefined without a default
+becomes `invalid('missing', 'Value is required')`. Intentionally optional output
+uses e.g. `field<I, string | undefined>('optional', read, { default: undefined })`.
+Defaults are values, not factories. Reader-returned Invalid bypasses defaults.
+
+Each field gets a Task named `preset:field.name`. Each validation gets another
+Task named `preset:field.name/validation.name`, immediately after that field.
+Validations run on the defaulted/converted value in declaration order. Undefined
+means success; Invalid carries a reason. Values are checkpointed before validation
+so failure retains the converted value. Empty nested records are assembled during
+prepare without user callbacks.
+
+## Selection definitions: two explicit forms
+
+Both overloads return `Preset<SelectionInput<I>, Batch<N>>`, with `N extends I`
+and default N = I. Narrowing requires a guard unless I already satisfies N.
+Each guard/condition is a separate Task; no callback runs during construction or
+compile.
+
+### PredicateSelectDefinition: direct guard and predicate record
 
 ```ts
-type Input = { id: string; display?: string; age?: number };
-type Output = { id: number; profile: { label: string }; age: number };
-const definition: ReshapeDefinition<Input, Output> = {
-  name: 'person',
-  fields: {
-    id: field('parse_id', x => /^\d+$/.test(x.id)
-      ? Number(x.id) : invalid('invalid_id', 'id must contain digits')),
-    profile: { label: field('display_name', x => x.display?.trim(), { default: 'anonymous' }) },
-    age: field('age', x => x.age, { default: 0, validate: [
-      { name: 'nonnegative', check: n => n >= 0 ? undefined
-        : invalid('negative_age', 'age must be nonnegative') },
-    ] }),
+type SelectionPredicate<T> = (value: T) => boolean | Invalid;
+interface GuardFailure {
+  readonly code: string;
+  readonly message: string;
+}
+// PredicateSelectDefinition<I,N> requires:
+// name: string
+// guard: (value:I) => value is N    (optional when I extends N)
+// guardFailure?: GuardFailure
+// rules: Readonly<Record<string, SelectionPredicate<N>>>
+
+const members = select<User, Member>({
+  name: 'members',
+  guard: (user): user is Member => user.kind === 'member',
+  rules: {
+    active: (member) => member.active || invalid('inactive', '利用停止中'),
+    verified: (member) =>
+      member.emailVerified || invalid('unverified', 'メール未確認'),
   },
-};
+});
 ```
 
-## Select API (implement in src/select.ts)
+The [complete example](../examples/predicates.ts) includes User/Member and inputs.
+Record keys name conditions, in own enumerable string-key Object.entries order.
+False yields `condition_failed` / `<key> did not match`; Invalid preserves its
+code/message. The direct guard's Task/rule name is `guard`; false yields
+`guard_failed` / `guard did not match`. Set
+`guardFailure: { code: 'not_member', message: '会員ではありません' }` to customize
+that reason. A guard must return boolean, not Invalid.
+
+### SelectDefinition: named guard and rule array
 
 ```ts
-export function select<I, N extends I = I>(
-  definition: SelectDefinition<I, N>,
-): Preset<SelectionInput<I>, Batch<N>>;
-
 interface NamedGuard<I, N extends I> {
   readonly name: string;
   readonly test: (value: I) => value is N;
@@ -187,119 +172,66 @@ interface SelectionRule<T> {
   readonly code: string;
   readonly message: string;
 }
-// SelectDefinition<I,N> requires name and rules.
-// Its guard is required when I is not assignable to N; otherwise optional.
-```
+// SelectDefinition<I,N> requires name, rules: readonly SelectionRule<N>[],
+// and guard: NamedGuard<I,N> (optional when I extends N).
 
-Rules can be empty. A supplied guard runs first, in its own native Task. Failed
-guard issue: `rule = guard.name`, `path = []`, `code = 'guard_failed'`,
-`message = guard.name + ' did not match'`. A rule returning false uses its
-configured code/message; Invalid overrides code/message. Each condition has a
-separate Task. Evaluate in declaration order; never evaluate a later condition
-for an excluded element. Rules after the guard receive N without caller casts.
-Accepted values remain unchanged. Array input gets original index/input/value
-entries in prepare; Batch input preserves its prior provenance and rejections.
-
-```ts
-type Animal = { kind: 'cat'; lives: number } | { kind: 'dog'; trained: boolean };
-type Cat = Extract<Animal, { kind: 'cat' }>;
-const definition: SelectDefinition<Animal, Cat> = {
-  name: 'cats',
-  guard: { name: 'cat', test: (x): x is Cat => x.kind === 'cat' },
-  rules: [{ name: 'alive', test: x => x.lives > 0, code: 'no_lives', message: 'cat has no remaining lives' }],
-};
-```
-
-## Shared builder (already implemented)
-
-Import `createPreset`, `assertSync`, `Stage`, `StageRule`, `StepContext` from
-`./internal/builder.js`. W is a worker-owned immutable working state.
-
-```ts
-interface Stage<I, O, W> {
-  readonly name: string;
-  readonly prepare: (input: I, context: StepContext<W>) => W | Invalid;
-  readonly rules: readonly StageRule<W>[];
-  readonly finish: (work: W, context: StepContext<W>) => O | Invalid;
-}
-interface StageRule<W> {
-  readonly name: string;
-  readonly path?: Path;
-  readonly apply: (work: W, context: StepContext<W>) => W | Invalid;
-}
-interface StepContext<W> {
-  locate(position: { readonly path?: Path; readonly index?: number }): void;
-  checkpoint(work: W): void;
-  issue(issue: Issue): void;
-}
-```
-
-```ts
-const addOne = createPreset<number, string, number>({
-  name: 'add_one',
-  prepare: input => input,
-  rules: [{ name: 'increment', apply: value => value + 1 }],
-  finish: value => String(value),
+const members = select<User, Member>({
+  name: 'members',
+  guard: {
+    name: 'member',
+    test: (user): user is Member => user.kind === 'member',
+  },
+  rules: [
+    {
+      name: 'active',
+      test: (member) => member.active,
+      code: 'inactive',
+      message: '利用停止中',
+    },
+  ],
 });
-// Graph: add_one:prepare -> add_one:increment -> add_one:result
 ```
 
-Before calling row-specific user code, `context.locate({ index, path })` records
-the current position. After each row transition (including expected rejection),
-`context.checkpoint(nextWork)` retains partial progress should a later row throw.
-For single reshape, checkpoint after every field value is written. Do not mutate
-work in place: native Focus deeply freezes plain objects and arrays. An apply
-callback must return its final W; checkpoints are for intermediate persistence,
-and the returned W replaces work on success. `context.issue(issue)` appends a
-batch diagnostic to Frame; the worker also stores it in that row's rejection.
-The builder adds the diagnostic automatically for a returned single Invalid.
+The guard uses its name and false yields `guard_failed` / `<guard.name> did not
+match`. Condition false uses the rule's code/message; Invalid overrides them.
+Use the predicate form for a customized direct-guard reason. The two are separate
+public definition types, not a mixed record/array configuration.
 
-The builder resets the location at every task, preserves current until finish,
-and catches callback exceptions using the latest checkpoint. Err contains
-`failedNode`, `trace`, original cause, `error.metadata.location`, and partial
-Frame. It rejects a thenable callback result with TypeError. User readers,
-validations and conditions must also be synchronous; phase 2 calls the shared
-`assertSync(value)` immediately after each user callback, before treating a
-thenable as an ordinary value or truthy predicate.
-No automatic async execution is introduced.
+Rules may be empty. They run in declaration order, after the guard, against
+still-active rows; later conditions never run for excluded rows. Unexpected
+nonboolean/non-Invalid values and thenables become TypeError Err. Accepted values
+are unchanged, and existing Batch rejections remain intact.
 
-Berylx's ordinary snapshot semantics apply: plain input objects/arrays are
-copied and frozen; class instances remain by reference. Source getters on plain
-objects can run during initial Focus normalization. If this throws, `run`
-returns native Err with the original cause and `error.metadata.phase = 'input'`;
-`failedNode` and Frame.location are null because no rule has run. Only on this
-failure path, a shallow-frozen class-backed Frame retains the original input by
-reference without retrying its failed snapshot. No work exists yet. Calling the
-compiled node directly follows native Berylx snapshot behavior; this protection
-belongs to `Preset.run`. The source-exception fixture instead uses a class source
-so its failure occurs inside a rule, after earlier progress.
+## Partial state and execution order
 
-## Commands and evidence
+Every node uses fixed Frame slots `input`, `current`, `work`, `issues`, `location`.
+Input is the pipeline's original input; current is its last completed stage
+output. Work holds current-stage partial implementation-specific state, typed
+unknown. Location contains preset/rule/path and optional original row index.
+Frame issues accumulate in task execution order; Batch rejections are presented
+in source order, so these orders can differ.
 
-| Command | Purpose |
-| --- | --- |
-| `npm ci` | Install exact lockfile, one peer Berylx runtime |
-| `npm run build` | Emit ESM/declarations to `dist/` |
-| `npm run typecheck` | Strict check of src/tests/fixtures/examples |
-| `npm run test:core` | Compile runtime tests, execute Node test runner |
-| `npm run test:types` | Positive/negative compile fixtures (`@ts-expect-error`) |
-| `npm test` | Runtime tests and type fixtures |
-| `npm run check` | Build, full typecheck, runtime/type tests (CI command) |
+Callbacks run synchronously, rule-major across active rows. The builder locates
+the row/path before user code and checkpoints after each row transition. Native
+Err retains this Frame, failedNode, trace, cause and `error.metadata.location`.
+This retains actual progress rather than simulating row-major application loops.
+Readers/predicates should be independent and avoid shared mutable side effects;
+[the comparison](comparison.md) states the equivalence scope.
 
-Native core tests cover graph visibility, compile/dryRun without callbacks,
-composition, short circuit, retained checkpoint/position/cause, input-snapshot
-failure, recoverable
-diagnostics, independent runs, and sync-only callback results. Type fixtures
-cover invalid wiring, missing/wrong fields, guard requirements, and typed Batch
-composition. Handwritten fixtures cover nested conversion, mixed records, union
-selection, first-failure reasons, inherited rejections, empty/all-rejected input,
-and an unexpected source exception. Their implementation is deliberately plain
-application control flow, not another executor. Phase 3 compares full consumer
-code including imports, configuration and helper functions; it must still prove
-the approved adoption criterion. Graph inspection is an extra capability, not
-extra lines artificially added to the handwritten baseline.
+Berylx copies/freezes ordinary objects and arrays; class instances remain by
+reference. A getter can throw during the initial snapshot. `Preset.run` returns
+native Err with `error.metadata.phase = 'input'`; failedNode/location are null
+because no Task ran. A shallow-frozen class-backed failure Frame retains the
+original input by reference without retrying its failed snapshot. Calling
+compiled nodes or Root directly follows native snapshot semantics. All user
+callbacks are synchronous; promise-valued leaves are unsupported.
 
-Runtime provenance: npm `@minamorl/berylx@0.3.1`, tarball SHA-1
-`aed1ea65c31baff5f70072fc615e4e35f6491726`. Read package README plus
-`src/task.ts`, `sequence.ts`, `result.ts`, `focus.ts`, `effect-tree/index.ts`,
-and `graph.ts`. The local berylx checkout was not used as the API authority.
+## Development verification
+
+`npm run check` runs whole-repository Prettier (including md/json/yml), build,
+runtime/type tests, full typecheck, reproducible source comparison and isolated
+tarball consumer verification. `npm run format` applies the same formatter
+everywhere. `npm run compare:write` regenerates measurements after intentional
+source changes. `npm run example` runs the predicate example. CI runs check on
+Node 18 and 24. Compatibility is tested against the npm Berylx 0.3.1 source;
+peer range is ^0.3.1 with no runtime dependencies.

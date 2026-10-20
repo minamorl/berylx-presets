@@ -7,7 +7,10 @@ class InputFailureFrame implements Frame {
   readonly issues: readonly Issue[] = Object.freeze([]);
   readonly location = null;
 
-  constructor(readonly input: unknown, readonly current: unknown) {
+  constructor(
+    readonly input: unknown,
+    readonly current: unknown,
+  ) {
     Object.freeze(this);
   }
 }
@@ -48,11 +51,15 @@ export class Preset<I, O> {
       focus = Focus.of(initialState);
     } catch (cause) {
       // No rule has run, so there is no failedNode or partial working value yet.
-      return { ok: false, result: ResultOps.err<Frame>(new InputFailureFrame(input, input),
-        cause instanceof Error ? cause.name : 'Error',
-        cause instanceof Error ? cause.message : String(cause),
-        { cause, metadata: { phase: 'input' } },
-      ) };
+      return {
+        ok: false,
+        result: ResultOps.err<Frame>(
+          new InputFailureFrame(input, input),
+          cause instanceof Error ? cause.name : 'Error',
+          cause instanceof Error ? cause.message : String(cause),
+          { cause, metadata: { phase: 'input' } },
+        ),
+      };
     }
     const result = node.call(focus);
     if (result instanceof Err) return { ok: false, result };

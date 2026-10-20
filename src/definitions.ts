@@ -33,7 +33,9 @@ export function field<I, T>(
     read,
     options: Object.freeze({
       ...options,
-      ...(options.validate ? { validate: Object.freeze([...options.validate]) } : {}),
+      ...(options.validate
+        ? { validate: Object.freeze([...options.validate]) }
+        : {}),
     }),
   });
 }
@@ -46,10 +48,13 @@ type NestedField<I, T> = T extends readonly unknown[]
       ? Shape<I, T>
       : never;
 
-/** Every declared key, including optional ones, needs an explicit field rule. */
-export type Shape<I, O> = {
-  readonly [K in keyof O]-?: Field<I, O[K]> | NestedField<I, O[K]>;
-};
+/** String/number-keyed record shapes; arrays/functions are whole-value fields. */
+export type Shape<I, O> = O extends
+  readonly unknown[] | ((...args: never[]) => unknown)
+  ? never
+  : Extract<keyof O, symbol> extends never
+    ? { readonly [K in keyof O]-?: Field<I, O[K]> | NestedField<I, O[K]> }
+    : never;
 
 export interface ReshapeDefinition<I, O extends object> {
   readonly name: string;

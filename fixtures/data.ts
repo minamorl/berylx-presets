@@ -14,7 +14,12 @@ export interface Person {
 }
 
 export type Animal =
-  | { readonly kind: 'cat'; readonly name: string; readonly lives: number; readonly indoor: boolean }
+  | {
+      readonly kind: 'cat';
+      readonly name: string;
+      readonly lives: number;
+      readonly indoor: boolean;
+    }
   | { readonly kind: 'dog'; readonly name: string; readonly trained: boolean };
 export type Cat = Extract<Animal, { kind: 'cat' }>;
 
@@ -37,7 +42,9 @@ export const animals: readonly Animal[] = [
 class UnavailableAge implements RawPerson {
   readonly id = '2';
   readonly active = true;
-  get age(): number { throw new Error('age source unavailable'); }
+  get age(): number {
+    throw new Error('age source unavailable');
+  }
 }
 
 /** An unexpected source exception after one complete item. */

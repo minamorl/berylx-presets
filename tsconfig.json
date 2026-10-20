@@ -11,5 +11,10 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": false
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "fixtures/**/*.ts", "examples/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "fixtures/**/*.ts",
+    "examples/**/*.ts"
+  ]
 }
