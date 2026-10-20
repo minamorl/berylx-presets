@@ -13,6 +13,7 @@ import {
   window,
 } from '../src/collection-patterns.js';
 import type { Batch, Rejected } from '../src/types.js';
+import type { PrimitiveKey } from '../src/collection-patterns.js';
 
 const inherited: Rejected = {
   index: 7,
@@ -69,6 +70,107 @@ test('groupBy groups stably, rejects invalid keys, and preserves Batch provenanc
     message: 'one excluded',
   });
   assert.deepEqual(success(preset.run([])).groups, []);
+});
+
+test('primitive keys use SameValueZero for NaN and preserve symbol identity', () => {
+  const shared = Symbol('shared');
+  const distinct = Symbol('shared');
+  const keys: PrimitiveKey[] = [
+    NaN,
+    NaN,
+    shared,
+    shared,
+    distinct,
+    -0,
+    +0,
+    null,
+    undefined,
+  ];
+  const grouping = success(
+    groupBy<PrimitiveKey, PrimitiveKey>({
+      name: 'key',
+      key: (value) => value,
+    }).run(keys),
+  );
+  assert.deepEqual(
+    grouping.groups.map((group) => group.entries.map((entry) => entry.index)),
+    [[0, 1], [2, 3], [4], [5, 6], [7], [8]],
+  );
+  assert.equal(grouping.groups[1]?.key, shared);
+  assert.equal(grouping.groups[2]?.key, distinct);
+
+  const indexed = success(
+    indexBy<PrimitiveKey, PrimitiveKey>({
+      name: 'key',
+      key: (value) => value,
+      onCollision: 'first',
+    }).run(keys),
+  );
+  assert.deepEqual(
+    indexed.entries.map((item) => item.entry.index),
+    [0, 2, 4, 5, 7, 8],
+  );
+  assert.deepEqual(
+    indexed.collisions.map((item) => item.incoming.index),
+    [1, 3, 6],
+  );
+
+  const unique = success(
+    deduplicate<PrimitiveKey, PrimitiveKey>({
+      name: 'key',
+      key: (value) => value,
+    }).run(keys),
+  );
+  assert.deepEqual(
+    unique.accepted.map((entry) => entry.index),
+    [0, 2, 4, 5, 7, 8],
+  );
+  assert.deepEqual(
+    unique.rejected.map((entry) => entry.index),
+    [1, 3, 6],
+  );
+});
+
+test('escaped object and function keys are whole Err at the callback checkpoint', () => {
+  const make = [
+    (key: (value: number) => number) =>
+      groupBy<number, number>({ name: 'key', key }),
+    (key: (value: number) => number) =>
+      indexBy<number, number>({ name: 'key', key, onCollision: 'first' }),
+    (key: (value: number) => number) =>
+      deduplicate<number, number>({ name: 'key', key }),
+  ];
+  for (const factory of make) {
+    const preset = factory((value) =>
+      value === 1 ? 1 : ({ id: 2 } as unknown as number),
+    );
+    const result = preset.run([1, 2]);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.ok(
+        (result.result.error as Error & { cause?: unknown }).cause instanceof
+          TypeError,
+      );
+      assert.equal(result.result.focus.value.location?.rule, 'key');
+      assert.equal(result.result.focus.value.location?.index, 1);
+      assert.deepEqual(result.result.focus.value.location?.path, ['key']);
+      const work = result.result.focus.value.work as {
+        keyed: readonly unknown[];
+      };
+      assert.equal(work.keyed.length, 1);
+    }
+  }
+  const functionKey = groupBy<number, number>({
+    name: 'key',
+    key: () => (() => 1) as unknown as number,
+  });
+  const functionResult = functionKey.run([1]);
+  assert.equal(functionResult.ok, false);
+  if (!functionResult.ok)
+    assert.ok(
+      (functionResult.result.error as Error & { cause?: unknown })
+        .cause instanceof TypeError,
+    );
 });
 
 test('indexBy exposes collisions and policy, with genuine source records', () => {
@@ -164,6 +266,98 @@ test('orderBy uses named stable multi-key order and snapshots definitions', () =
     output.accepted.map((e) => e.index),
     [3, 12, 9],
   );
+});
+
+test('orderBy has a total mixed-key order and rejects NaN with provenance', () => {
+  const mixed = orderBy<string | number>({
+    keys: [{ name: 'value', key: (value) => value }],
+  });
+  const input: (string | number)[] = [2, '10', 1, '2', 2];
+  const ascending = success(mixed.run(input));
+  assert.deepEqual(
+    ascending.accepted.map((entry) => entry.value),
+    [1, 2, 2, '10', '2'],
+  );
+  assert.deepEqual(
+    ascending.accepted
+      .filter((entry) => entry.value === 2)
+      .map((entry) => entry.index),
+    [0, 4],
+  );
+  const descending = success(
+    orderBy<string | number>({
+      keys: [{ name: 'value', key: (value) => value, direction: 'desc' }],
+    }).run(input),
+  );
+  assert.deepEqual(
+    descending.accepted.map((entry) => entry.value),
+    ['2', '10', 2, 2, 1],
+  );
+  assert.deepEqual(
+    descending.accepted
+      .filter((entry) => entry.value === 2)
+      .map((entry) => entry.index),
+    [0, 4],
+  );
+
+  const nanBatch: Batch<number> = {
+    accepted: [
+      { index: 3, input: 2, value: 2 },
+      { index: 9, input: NaN, value: NaN },
+      { index: 12, input: 1, value: 1 },
+    ],
+    rejected: [inherited],
+  };
+  const nanOutput = success(
+    orderBy<number>({ keys: [{ name: 'numeric', key: (value) => value }] }).run(
+      nanBatch,
+    ),
+  );
+  assert.deepEqual(
+    nanOutput.accepted.map((entry) => entry.index),
+    [12, 3],
+  );
+  assert.deepEqual(nanOutput.rejected[0], inherited);
+  assert.equal(nanOutput.rejected[1]?.index, 9);
+  assert.ok(Number.isNaN(nanOutput.rejected[1]?.input));
+  assert.deepEqual(nanOutput.rejected[1]?.issues[0], {
+    rule: 'numeric',
+    path: ['keys', 'numeric'],
+    code: 'invalid_sort_key',
+    message: 'Sort key cannot be NaN',
+  });
+});
+
+test('orderBy rejects escaped unsupported keys as whole Err', () => {
+  for (const unsupported of [undefined, { value: 2 }, true]) {
+    const preset = orderBy<number>({
+      keys: [
+        {
+          name: 'bad-key',
+          key: (value) =>
+            value === 1 ? 1 : (unsupported as unknown as number),
+        },
+      ],
+    });
+    const result = preset.run([1, 2]);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.ok(
+        (result.result.error as Error & { cause?: unknown }).cause instanceof
+          TypeError,
+      );
+      assert.deepEqual(result.result.focus.value.location, {
+        preset: 'orderBy',
+        rule: 'bad-key',
+        path: ['keys', 'bad-key'],
+        index: 1,
+      });
+      const work = result.result.focus.value.work as {
+        accepted: readonly unknown[];
+      };
+      assert.equal(work.accepted.length, 1);
+    }
+  }
 });
 
 test('paginate retains skipped rows; chunk and window preserve full provenance', () => {

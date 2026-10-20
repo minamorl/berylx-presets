@@ -9,6 +9,7 @@ import {
   chunk,
   window,
 } from '../../src/collection-patterns.js';
+import type { PrimitiveKey } from '../../src/collection-patterns.js';
 import { invalid } from '../../src/invalid.js';
 import type { Batch, SelectionInput } from '../../src/types.js';
 import type { Preset } from '../../src/preset.js';
@@ -91,6 +92,19 @@ void invalidKey;
 
 // @ts-expect-error a number key is incompatible with a string key contract
 groupBy<Row, string>({ name: 'wrong', key: (row) => row.score });
+// @ts-expect-error object keys are not stable primitive keys
+groupBy<Row, { id: string }>({ name: 'wrong', key: (row) => ({ id: row.id }) });
+// @ts-expect-error object keys are not stable primitive keys
+indexBy<Row, { id: string }>({
+  name: 'wrong',
+  key: (row) => ({ id: row.id }),
+  onCollision: 'first',
+});
+// @ts-expect-error object keys are not stable primitive keys
+deduplicate<Row, { id: string }>({
+  name: 'wrong',
+  key: (row) => ({ id: row.id }),
+});
 // @ts-expect-error a predicate must return boolean or Invalid
 partition<Row>({ name: 'wrong', test: (row) => row.score });
 indexBy<Row, string>({
@@ -103,6 +117,20 @@ const pageThenPartition = paged.then(partitioned);
 void pageThenPartition;
 // @ts-expect-error GroupResult is not a Batch<Row>
 grouped.then(unique);
+
+const primitiveGroup: Preset<
+  SelectionInput<PrimitiveKey>,
+  {
+    readonly groups: readonly { readonly key: PrimitiveKey }[];
+    readonly rejected: readonly unknown[];
+  }
+> = groupBy<PrimitiveKey, PrimitiveKey>({
+  name: 'primitive',
+  key: (value) => value,
+});
+void primitiveGroup;
+// @ts-expect-error orderBy keys must be number or string
+orderBy<Row>({ keys: [{ name: 'wrong', key: () => true }] });
 
 // The complete configuration shown in docs/collection-patterns.md is kept type-checked here.
 {

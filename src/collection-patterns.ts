@@ -70,7 +70,12 @@ export interface WindowResult<T> {
   readonly rejected: readonly Rejected[];
 }
 
-export type KeyRule<T, K> = (value: T, source: Accepted<T>) => K | Invalid;
+export type PrimitiveKey =
+  string | number | boolean | bigint | symbol | null | undefined;
+export type KeyRule<T, K extends PrimitiveKey> = (
+  value: T,
+  source: Accepted<T>,
+) => K | Invalid;
 export type PredicateRule<T> = (
   value: T,
   source: Accepted<T>,
@@ -151,8 +156,28 @@ function uniqueNames(names: readonly string[], kind: string): void {
   }
 }
 
+function isPrimitiveKey(value: unknown): value is PrimitiveKey {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint' ||
+    typeof value === 'symbol'
+  );
+}
+
+function compareSortKeys(
+  left: string | number,
+  right: string | number,
+): number {
+  if (typeof left !== typeof right) return typeof left === 'number' ? -1 : 1;
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 /** Stable first-seen grouping. Map key equality follows JavaScript SameValueZero. */
-export function groupBy<T, K>(definition: {
+export function groupBy<T, K extends PrimitiveKey>(definition: {
   readonly name: string;
   readonly key: KeyRule<T, K>;
 }): Preset<SelectionInput<T>, GroupResult<K, T>> {
@@ -174,6 +199,10 @@ export function groupBy<T, K>(definition: {
         );
         if (key instanceof Invalid)
           rejected.push(reject(entry, definition.name, ['key'], key));
+        else if (!isPrimitiveKey(key))
+          throw new TypeError(
+            'groupBy key must be a primitive value or Invalid',
+          );
         else keyed.push({ entry, key });
       }
       return { accepted: work.accepted, rejected, keyed };
@@ -199,7 +228,7 @@ export function groupBy<T, K>(definition: {
 }
 
 /** Unique index; duplicate policy is explicit and collisions remain visible. */
-export function indexBy<T, K>(definition: {
+export function indexBy<T, K extends PrimitiveKey>(definition: {
   readonly name: string;
   readonly key: KeyRule<T, K>;
   readonly onCollision: 'first' | 'last' | 'reject';
@@ -223,6 +252,10 @@ export function indexBy<T, K>(definition: {
         );
         if (key instanceof Invalid)
           rejected.push(reject(entry, definition.name, ['key'], key));
+        else if (!isPrimitiveKey(key))
+          throw new TypeError(
+            'indexBy key must be a primitive value or Invalid',
+          );
         else keyed.push({ entry, key });
       }
       return { accepted: work.accepted, rejected, keyed };
@@ -263,7 +296,7 @@ export function indexBy<T, K>(definition: {
 }
 
 /** Retain the first or last row per key and report every discarded row. */
-export function deduplicate<T, K>(definition: {
+export function deduplicate<T, K extends PrimitiveKey>(definition: {
   readonly name: string;
   readonly key: KeyRule<T, K>;
   readonly keep?: 'first' | 'last';
@@ -287,6 +320,10 @@ export function deduplicate<T, K>(definition: {
         );
         if (key instanceof Invalid)
           rejected.push(reject(entry, definition.name, ['key'], key));
+        else if (!isPrimitiveKey(key))
+          throw new TypeError(
+            'deduplicate key must be a primitive value or Invalid',
+          );
         else keyed.push({ entry, key });
       }
       return { accepted: work.accepted, rejected, keyed };
@@ -368,6 +405,19 @@ export function orderBy<T>(definition: {
         );
         if (value instanceof Invalid)
           rejected.push(reject(entry, key.name, ['keys', key.name], value));
+        else if (typeof value !== 'string' && typeof value !== 'number')
+          throw new TypeError(
+            'orderBy key must be a string, number, or Invalid',
+          );
+        else if (typeof value === 'number' && Number.isNaN(value))
+          rejected.push(
+            reject(
+              entry,
+              key.name,
+              ['keys', key.name],
+              new Invalid('invalid_sort_key', 'Sort key cannot be NaN'),
+            ),
+          );
         else {
           values.set(entry, [...(values.get(entry) ?? []), value]);
           accepted.push(entry);
@@ -388,7 +438,7 @@ export function orderBy<T>(definition: {
         const left = work.values.get(a)!;
         const right = work.values.get(b)!;
         for (let i = 0; i < keys.length; i++) {
-          const cmp = left[i]! < right[i]! ? -1 : left[i]! > right[i]! ? 1 : 0;
+          const cmp = compareSortKeys(left[i]!, right[i]!);
           if (cmp) return keys[i]!.direction === 'desc' ? -cmp : cmp;
         }
         return positions.get(a)! - positions.get(b)!;
