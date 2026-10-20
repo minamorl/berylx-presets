@@ -106,6 +106,16 @@ leaves; whole-value fields can also return objects with symbol keys. Ordinary
 records and array-valued leaves remain supported. Definitions must not hide
 required fields on prototypes or nonenumerable properties.
 
+The mapped public-property view of each assembled output must itself be
+assignable to that output type. Private/protected nominal state and constructor
+signatures cannot be supplied by public-key assembly, so those root or nested
+shapes are rejected statically. A whole-value field may return an actual instance
+or constructor with the required type. Ordinary record interfaces, readonly and
+optional properties, inference, and string/number index signatures remain
+supported. As in ordinary TypeScript, an index signature does not establish that
+every possible key exists at runtime; use `noUncheckedIndexedAccess` when reading
+unknown keys.
+
 Only undefined triggers a default, detected by presence of `default` in options.
 Null, false, zero and empty string remain values. Undefined without a default
 becomes `invalid('missing', 'Value is required')`. Intentionally optional output

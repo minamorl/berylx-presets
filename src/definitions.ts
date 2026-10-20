@@ -48,12 +48,14 @@ type NestedField<I, T> = T extends readonly unknown[]
       ? Shape<I, T>
       : never;
 
-/** String/number-keyed record shapes; arrays/functions are whole-value fields. */
+/** Public properties must satisfy O without hidden instance/construction state. */
 export type Shape<I, O> = O extends
   readonly unknown[] | ((...args: never[]) => unknown)
   ? never
   : Extract<keyof O, symbol> extends never
-    ? { readonly [K in keyof O]-?: Field<I, O[K]> | NestedField<I, O[K]> }
+    ? { [K in keyof O]: O[K] } extends O
+      ? { readonly [K in keyof O]-?: Field<I, O[K]> | NestedField<I, O[K]> }
+      : never
     : never;
 
 export interface ReshapeDefinition<I, O extends object> {
