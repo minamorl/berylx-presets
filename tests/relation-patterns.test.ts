@@ -12,6 +12,7 @@ import {
   scan,
   zipStrict,
 } from '../src/relation-patterns.js';
+import type { PrimitiveKey } from '../src/relation-patterns.js';
 import type { Batch } from '../src/types.js';
 
 const rejected = {
@@ -577,4 +578,108 @@ test('later key exceptions retain earlier keys and origins at the checkpoint', (
     assert.equal(work.leftMap.get(1)?.index, 0);
     assert.equal(work.rightMap.get(1)?.index, 0);
   }
+});
+
+test('JavaScript object and function keys are explicit whole errors', () => {
+  const shared = { id: 1 };
+  const rows = [{ key: shared }];
+  const escapedKey = (row: { key: object }) => row.key as unknown as string;
+  const cases = [
+    {
+      result: lookupJoin<{ key: object }, { key: object }, string>({
+        leftKey: escapedKey,
+        rightKey: escapedKey,
+      }).run({ left: rows, right: rows }),
+      rule: 'rightKey',
+      side: 'right',
+    },
+    {
+      result: joinMany<{ key: object }, { key: object }, string>({
+        leftKey: escapedKey,
+        rightKey: escapedKey,
+      }).run({ left: rows, right: rows }),
+      rule: 'rightKey',
+      side: 'right',
+    },
+    {
+      result: reconcile<{ key: object }, { key: object }, string>({
+        leftKey: escapedKey,
+        rightKey: escapedKey,
+        equal: () => true,
+      }).run({ left: rows, right: rows }),
+      rule: 'leftKey',
+      side: 'left',
+    },
+  ];
+  for (const { result, rule, side } of cases) {
+    err(result);
+    if (!result.ok) {
+      assert.ok(result.result.error.cause instanceof TypeError);
+      assert.equal(result.result.focus.value.location?.rule, rule);
+      assert.deepEqual(result.result.focus.value.location?.path, [side]);
+      assert.equal(result.result.focus.value.location?.index, 0);
+      const work = result.result.focus.value.work as {
+        left: { index: number }[];
+        right: { index: number }[];
+      };
+      assert.equal(work.left[0]?.index, 0);
+      assert.equal(work.right[0]?.index, 0);
+    }
+  }
+  const functionKey = () => 1;
+  const functionResult = lookupJoin<{ key: object }, { key: object }, string>({
+    leftKey: escapedKey,
+    rightKey: escapedKey,
+  }).run({ left: [{ key: functionKey }], right: [{ key: functionKey }] });
+  err(functionResult);
+  if (!functionResult.ok)
+    assert.ok(functionResult.result.error.cause instanceof TypeError);
+});
+
+test('primitive key equality, mismatch and duplicate behavior', () => {
+  const symbol = Symbol('shared');
+  const keys: PrimitiveKey[] = [
+    'text',
+    0,
+    NaN,
+    true,
+    1n,
+    symbol,
+    null,
+    undefined,
+  ];
+  const lookup = lookupJoin<PrimitiveKey, PrimitiveKey, PrimitiveKey>({
+    leftKey: (key) => key,
+    rightKey: (key) => key,
+  });
+  assert.equal(
+    value(lookup.run({ left: keys, right: keys })).accepted.length,
+    keys.length,
+  );
+  assert.equal(
+    value(lookup.run({ left: ['absent'], right: keys })).unmatched.length,
+    1,
+  );
+  err(lookup.run({ left: [], right: [1, 1] }));
+
+  const many = joinMany<PrimitiveKey, PrimitiveKey, PrimitiveKey>({
+    leftKey: (key) => key,
+    rightKey: (key) => key,
+  });
+  assert.equal(
+    value(many.run({ left: [null], right: [null, null] })).accepted[0]?.rights
+      .length,
+    2,
+  );
+
+  const compare = reconcile<PrimitiveKey, PrimitiveKey, PrimitiveKey>({
+    leftKey: (key) => key,
+    rightKey: (key) => key,
+    equal: (left, right) => Object.is(left, right),
+  });
+  assert.equal(
+    value(compare.run({ left: keys, right: keys })).unchanged.length,
+    keys.length,
+  );
+  err(compare.run({ left: [true, true], right: [] }));
 });

@@ -121,3 +121,11 @@ reconcile<Item, Item, number>({
   // @ts-expect-error comparison must return boolean or Invalid
   equal: () => 'same',
 });
+
+// @ts-expect-error lookup keys must be primitive
+type BadLookupKey = Parameters<typeof lookupJoin<Item, Item, object>>;
+// @ts-expect-error one-to-many keys must be primitive
+type BadManyKey = Parameters<typeof joinMany<Item, Item, object>>;
+// @ts-expect-error reconciliation keys must be primitive
+type BadReconcileKey = Parameters<typeof reconcile<Item, Item, object>>;
+void (0 as unknown as BadLookupKey | BadManyKey | BadReconcileKey);

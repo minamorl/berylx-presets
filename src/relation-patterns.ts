@@ -21,6 +21,8 @@ export interface SourcedRejection<S extends string> {
   readonly source: S;
   readonly rejection: Rejected;
 }
+export type PrimitiveKey =
+  string | number | boolean | bigint | symbol | null | undefined;
 
 function rows<T>(input: SelectionInput<T>): {
   accepted: readonly Origin<T>[];
@@ -51,6 +53,21 @@ function checkedBoolean(value: unknown): boolean | Invalid {
   if (typeof value !== 'boolean')
     throw new TypeError('Predicate must return boolean or Invalid');
   return value;
+}
+function checkedKey<K extends PrimitiveKey>(value: K | Invalid): K | Invalid {
+  assertSync(value);
+  if (value instanceof Invalid) return value;
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint' ||
+    typeof value === 'symbol'
+  )
+    return value;
+  throw new TypeError('Key selector must return a primitive key or Invalid');
 }
 function locate<T>(
   context: {
@@ -224,7 +241,7 @@ export interface JoinOutput<L, R> {
   readonly rejected: readonly PairRejection[];
 }
 /** One-to-one left lookup join; duplicate right keys are invalid. */
-export function lookupJoin<L, R, K>(definition: {
+export function lookupJoin<L, R, K extends PrimitiveKey>(definition: {
   readonly leftKey: (value: L) => K | Invalid;
   readonly rightKey: (value: R) => K | Invalid;
 }): Preset<PairInput<L, R>, JoinOutput<L, R>> {
@@ -248,7 +265,7 @@ export function lookupJoin<L, R, K>(definition: {
             locate(context, { ...work, rightKeys: [...keys] }, row.index, [
               'right',
             ]);
-            const key = checked(definition.rightKey(row.value));
+            const key = checkedKey(definition.rightKey(row.value));
             if (key instanceof Invalid) return key;
             if (seen.has(key))
               return invalid(
@@ -269,7 +286,7 @@ export function lookupJoin<L, R, K>(definition: {
             locate(context, { ...work, leftKeys: [...keys] }, row.index, [
               'left',
             ]);
-            const key = checked(definition.leftKey(row.value));
+            const key = checkedKey(definition.leftKey(row.value));
             if (key instanceof Invalid) return key;
             keys.push(key);
           }
@@ -316,7 +333,7 @@ export interface JoinManyOutput<L, R> {
   readonly rejected: readonly PairRejection[];
 }
 /** One-to-many left join, retaining rows with zero matches. */
-export function joinMany<L, R, K>(definition: {
+export function joinMany<L, R, K extends PrimitiveKey>(definition: {
   readonly leftKey: (value: L) => K | Invalid;
   readonly rightKey: (value: R) => K | Invalid;
 }): Preset<PairInput<L, R>, JoinManyOutput<L, R>> {
@@ -338,7 +355,7 @@ export function joinMany<L, R, K>(definition: {
             locate(context, { ...work, keys: new Map(keys) }, row.index, [
               'right',
             ]);
-            const key = checked(definition.rightKey(row.value));
+            const key = checkedKey(definition.rightKey(row.value));
             if (key instanceof Invalid) return key;
             keys.set(key, [...(keys.get(key) ?? []), row]);
           }
@@ -359,7 +376,7 @@ export function joinMany<L, R, K>(definition: {
               row.index,
               ['left'],
             );
-            const key = checked(definition.leftKey(row.value));
+            const key = checkedKey(definition.leftKey(row.value));
             if (key instanceof Invalid) return key;
             accepted.push({
               left: { source: 'left', origin: row },
@@ -430,7 +447,7 @@ export interface ReconcileOutput<L, R> {
   readonly rejected: readonly PairRejection[];
 }
 /** Compare unique keys; duplicate keys on either side are invalid. */
-export function reconcile<L, R, K>(definition: {
+export function reconcile<L, R, K extends PrimitiveKey>(definition: {
   readonly leftKey: (value: L) => K | Invalid;
   readonly rightKey: (value: R) => K | Invalid;
   readonly equal: (left: L, right: R) => boolean | Invalid;
@@ -454,7 +471,7 @@ export function reconcile<L, R, K>(definition: {
             locate(context, { ...work, leftMap: new Map(leftMap) }, row.index, [
               'left',
             ]);
-            const key = checked(definition.leftKey(row.value));
+            const key = checkedKey(definition.leftKey(row.value));
             if (key instanceof Invalid) return key;
             if (leftMap.has(key))
               return invalid('duplicate_key', 'Left key occurs more than once');
@@ -474,7 +491,7 @@ export function reconcile<L, R, K>(definition: {
               row.index,
               ['right'],
             );
-            const key = checked(definition.rightKey(row.value));
+            const key = checkedKey(definition.rightKey(row.value));
             if (key instanceof Invalid) return key;
             if (rightMap.has(key))
               return invalid(
