@@ -1,0 +1,27 @@
+{
+  "name": "@minamorl/berylx-presets",
+  "version": "0.1.0",
+  "description": "Typed, inspectable data presets for Berylx.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "engines": { "node": ">=18" },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist", "README.md", "docs/contract.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:core": "tsc -p tsconfig.test.json && node --test .test-build/tests/*.test.js",
+    "test:types": "tsc --noEmit -p tsconfig.types.json",
+    "test": "npm run test:core && npm run test:types",
+    "check": "npm run build && npm run typecheck && npm test"
+  },
+  "peerDependencies": { "@minamorl/berylx": "^0.3.1" },
+  "devDependencies": {
+    "@minamorl/berylx": "0.3.1",
+    "@types/node": "24.10.0",
+    "typescript": "5.9.3"
+  }
+}
