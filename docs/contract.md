@@ -5,7 +5,7 @@ native `Task<Frame>` and `Sequence<Frame>` from the shared Berylx runtime.
 
 ## Preset and execution
 
-`Preset<I, O>` is a public type, created by `reshape`, `reshapeMany` or `select`.
+For the complete set of preset factories, see the [factory catalog](patterns.md).
 `.then(next: Preset<O, N>)` returns `Preset<I, N>`; a next stage accepting a broader
 input is also allowed. Incompatible wiring is a type error.
 
