@@ -1,5 +1,7 @@
 # @minamorl/berylx-presets
 
+This package provides 30 synchronous preset factories. See the [complete factory catalog](docs/patterns.md) for transform, collection, relation, and workflow APIs with runnable package-import examples.
+
 Transform nested records and select typed array elements with named Berylx tasks.
 Presets handle defaults, validation, partial state and rejection reasons; you
 supply field readers and predicates.

@@ -1,6 +1,6 @@
 # Collection patterns
 
-These nine synchronous factories are exported from `src/collection-patterns.ts` (and from its built `dist/collection-patterns.js`). The package root is registered in `src/index.ts` separately; this assignment does not change that file. In this repository, a TypeScript consumer can import the source module directly:
+Use these synchronous collection factories from the package root, `@minamorl/berylx-presets`. See the [complete 30-factory catalog](patterns.md) for cross-family examples and the [README](../README.md) for reshape and select.
 
 ```ts
 import {
@@ -13,8 +13,8 @@ import {
   route,
   chunk,
   window,
-} from '../src/collection-patterns.js';
-import { invalid } from '../src/invalid.js';
+} from '@minamorl/berylx-presets';
+import { invalid } from '@minamorl/berylx-presets';
 
 type Row = { id: string; score: number };
 const rows: Row[] = [

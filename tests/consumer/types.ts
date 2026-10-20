@@ -158,3 +158,111 @@ export const whole = reshape<
     ]),
   },
 });
+
+// Installed-package root surface: every added factory and the guard alias.
+import {
+  mapValue as pattern30_mapValue,
+  mapAccepted as pattern30_mapAccepted,
+  expandAccepted as pattern30_expandAccepted,
+  validateValue as pattern30_validateValue,
+  refineValue as pattern30_refineValue,
+  auditValue as pattern30_auditValue,
+  countAccepted as pattern30_countAccepted,
+  acceptedValues as pattern30_acceptedValues,
+  issueReport as pattern30_issueReport,
+  groupBy as pattern30_groupBy,
+  indexBy as pattern30_indexBy,
+  deduplicate as pattern30_deduplicate,
+  orderBy as pattern30_orderBy,
+  paginate as pattern30_paginate,
+  partition as pattern30_partition,
+  route as pattern30_route,
+  chunk as pattern30_chunk,
+  window as pattern30_window,
+  fold as pattern30_fold,
+  scan as pattern30_scan,
+  lookupJoin as pattern30_lookupJoin,
+  joinMany as pattern30_joinMany,
+  zipStrict as pattern30_zipStrict,
+  reconcile as pattern30_reconcile,
+  choose as pattern30_choose,
+  fallback as pattern30_fallback,
+  fanout as pattern30_fanout,
+  type NamedGuard as Pattern30LegacyGuard,
+  type RefinementGuard as Pattern30RefinementGuard,
+} from '@minamorl/berylx-presets';
+
+void [
+  pattern30_mapValue,
+  pattern30_expandAccepted,
+  pattern30_validateValue,
+  pattern30_refineValue,
+  pattern30_auditValue,
+  pattern30_acceptedValues,
+  pattern30_issueReport,
+  pattern30_groupBy,
+  pattern30_indexBy,
+  pattern30_deduplicate,
+  pattern30_paginate,
+  pattern30_partition,
+  pattern30_route,
+  pattern30_chunk,
+  pattern30_window,
+  pattern30_fold,
+  pattern30_scan,
+  pattern30_lookupJoin,
+  pattern30_joinMany,
+  pattern30_zipStrict,
+  pattern30_reconcile,
+  pattern30_choose,
+  pattern30_fallback,
+  pattern30_fanout,
+];
+
+interface Pattern30Row {
+  readonly id: string;
+  readonly amount: number;
+}
+
+const pattern30_pipeline = pattern30_mapAccepted<Pattern30Row, Pattern30Row>({
+  name: 'copy-installed',
+  transform: (row) => ({ id: row.id, amount: row.amount }),
+})
+  .then(
+    pattern30_orderBy<Pattern30Row>({
+      keys: [{ name: 'amount', key: (row) => row.amount }],
+    }),
+  )
+  .then(pattern30_countAccepted<Pattern30Row>({ min: 1 }));
+pattern30_pipeline.run([{ id: 'one', amount: 1 }]);
+
+const pattern30_guard: Pattern30RefinementGuard<
+  Pattern30Row | null,
+  Pattern30Row
+> = {
+  name: 'present',
+  guard: (row): row is Pattern30Row => row !== null,
+};
+const pattern30_legacyGuard: Pattern30LegacyGuard<
+  Pattern30Row | null,
+  Pattern30Row
+> = {
+  name: 'present',
+  test: (row): row is Pattern30Row => row !== null,
+};
+pattern30_refineValue(pattern30_guard);
+void pattern30_legacyGuard;
+
+pattern30_pipeline.then(
+  // @ts-expect-error a string-input preset cannot follow a Batch<Pattern30Row>
+  pattern30_mapAccepted<string, string>({
+    name: 'text',
+    transform: (value) => value,
+  }),
+);
+
+pattern30_mapAccepted<Pattern30Row, number>({
+  name: 'wrong-output',
+  // @ts-expect-error the declared numeric output cannot be a string
+  transform: (row) => row.id,
+});

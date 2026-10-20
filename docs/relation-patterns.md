@@ -1,11 +1,9 @@
 # Relation and workflow presets
 
-These nine factories are defined in `src/relation-patterns.ts`. This partition does not edit the package's `src/index.ts`; import the module path directly inside this repository until the public registration step exports it. Each factory returns `Preset<I, O>` with `.compile(input)`, `.run(input)`, and typed `.then(next)`.
-
-## Complete configuration example
+Use these synchronous relation factories from the package root, `@minamorl/berylx-presets`. See the [complete 30-factory catalog](patterns.md) for cross-family examples and the [README](../README.md) for reshape and select.
 
 ```ts
-import { invalid } from '../src/invalid.js';
+import { invalid } from '@minamorl/berylx-presets';
 import {
   fold,
   scan,
@@ -16,8 +14,8 @@ import {
   choose,
   fallback,
   fanout,
-} from '../src/relation-patterns.js';
-import type { Batch } from '../src/types.js';
+} from '@minamorl/berylx-presets';
+import type { Batch } from '@minamorl/berylx-presets';
 
 type Item = { id: number; amount: number };
 const items: Batch<Item> = {

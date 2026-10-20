@@ -1,17 +1,15 @@
 # Transform patterns
 
-These nine factories live in `src/transform-patterns.ts`. This partition does not edit `src/index.ts`, so package-root registration is a separate integration step. Every factory returns `Preset<I, O>` with `.compile(input)`, `.run(input)`, and typed `.then(next)`.
-
-## Single value
+Use these synchronous transform factories from the package root, `@minamorl/berylx-presets`. See the [complete 30-factory catalog](patterns.md) for cross-family examples and the [README](../README.md) for reshape and select.
 
 ```ts
-import { invalid } from '../src/invalid.js';
+import { invalid } from '@minamorl/berylx-presets';
 import {
   mapValue,
   validateValue,
   auditValue,
   refineValue,
-} from '../src/transform-patterns.js';
+} from '@minamorl/berylx-presets';
 
 const positive = validateValue<number>([
   { name: 'positive', path: ['amount'], check: (n) => n > 0 },
@@ -47,14 +45,14 @@ const lives = cats.then(
 ## Batch conversion and terminal results
 
 ```ts
-import { invalid } from '../src/invalid.js';
+import { invalid } from '@minamorl/berylx-presets';
 import {
   mapAccepted,
   expandAccepted,
   countAccepted,
   acceptedValues,
   issueReport,
-} from '../src/transform-patterns.js';
+} from '@minamorl/berylx-presets';
 
 const parsed = mapAccepted<string, number>({
   name: 'parse',
@@ -108,6 +106,6 @@ All callbacks are synchronous. No retry or async executor is introduced. A Batch
 | `acceptedValues` | `SelectionInput<T> → readonly T[]`   | Explicit terminal value extraction  |
 | `issueReport`    | `SelectionInput<T> → IssueReport<T>` | Source-aware diagnostic report      |
 
-## Integration overlap
+## Expansion results
 
-Use `mapAccepted` when each accepted source produces one value; use `expandAccepted` when it produces an array of values. `expandAccepted` accepts real arrays, including `[]`, and treats `Invalid` as a rejected source row. A runtime string, `Set`, other iterable, or nonarray value from its callback causes a whole `Err` with a `TypeError` cause. The checkpoint keeps previously expanded rows and inherited rejections, while the location identifies the failing source index and named rule. Thenables also cause a whole `Err` before array validation. Package-root registration in `src/index.ts` remains outside this module's assigned files.
+Use `mapAccepted` when each accepted source produces one value; use `expandAccepted` when it produces an array of values. `expandAccepted` accepts real arrays, including `[]`, and treats `Invalid` as a rejected source row. A runtime string, `Set`, other iterable, or nonarray value from its callback causes a whole `Err` with a `TypeError` cause. The checkpoint keeps previously expanded rows and inherited rejections, while the location identifies the failing source index and named rule. Thenables also cause a whole `Err` before array validation.
