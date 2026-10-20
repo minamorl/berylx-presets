@@ -147,6 +147,9 @@ function batchTransform<I, O>(
                 issues: [issue],
               });
             } else if (expand) {
+              if (!Array.isArray(value)) {
+                throw new TypeError(`${name} must return an array or Invalid`);
+              }
               for (const item of value as readonly O[]) {
                 accepted.push({
                   index: row.index,

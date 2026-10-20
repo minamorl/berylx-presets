@@ -122,6 +122,79 @@ test('expandAccepted carries honest source provenance through zero or many outpu
   }
 });
 
+test('expandAccepted rejects nonarrays as whole Err with source checkpoint', () => {
+  const badValues: readonly [string, unknown][] = [
+    ['string', 'abc'],
+    ['set', new Set(['a', 'b'])],
+    [
+      'generator',
+      (function* () {
+        yield 'a';
+      })(),
+    ],
+    ['object', { 0: 'a', length: 1 }],
+    ['null', null],
+  ];
+  for (const [label, badValue] of badValues) {
+    const escaped = ((n: number) =>
+      n === 1 ? ['ok'] : badValue) as unknown as (
+      n: number,
+    ) => readonly string[];
+    const preset = expandAccepted<number, string>({
+      name: 'expandRows',
+      path: ['parts'],
+      transform: escaped,
+    });
+    const result = preset.run({
+      accepted: [
+        { index: 11, input: 'first', value: 1 },
+        { index: 23, input: 'second', value: 2 },
+      ],
+      rejected: [oldRejection],
+    });
+    assert.equal(result.ok, false, label);
+    if (!result.ok) {
+      assert.ok(result.result.error.cause instanceof TypeError, label);
+      assert.equal(result.result.focus.value.location?.rule, 'expandRows');
+      assert.equal(result.result.focus.value.location?.index, 23);
+      assert.deepEqual(result.result.focus.value.location?.path, ['parts']);
+      const checkpoint = result.result.focus.value.work as {
+        accepted: { index: number; input: unknown; value: string }[];
+        source: { rejected: { index: number }[] };
+      };
+      assert.deepEqual(checkpoint.accepted, [
+        { index: 11, input: 'first', value: 'ok' },
+      ]);
+      assert.deepEqual(
+        checkpoint.source.rejected.map((row) => row.index),
+        [7],
+      );
+    }
+  }
+
+  const empty = expandAccepted<number, string>({
+    name: 'emptyArray',
+    transform: () => [],
+  }).run([1]);
+  assert.equal(empty.ok, true);
+  if (empty.ok) assert.deepEqual(empty.value.accepted, []);
+});
+
+test('expandAccepted still rejects thenables before array validation', () => {
+  const escaped = (() => Promise.resolve(['a'])) as unknown as (
+    n: number,
+  ) => readonly string[];
+  const result = expandAccepted<number, string>({
+    name: 'asyncExpansion',
+    transform: escaped,
+  }).run([1]);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.result.focus.value.location?.rule, 'asyncExpansion');
+    assert.equal(result.result.focus.value.location?.index, 0);
+  }
+});
+
 test('validateValue uses declaration order and snapshots mutable rules', () => {
   const seen: string[] = [];
   const rules = [

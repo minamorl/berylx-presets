@@ -107,3 +107,7 @@ All callbacks are synchronous. No retry or async executor is introduced. A Batch
 | `countAccepted`  | `SelectionInput<T> → Batch<T>`       | Accepted count bounds               |
 | `acceptedValues` | `SelectionInput<T> → readonly T[]`   | Explicit terminal value extraction  |
 | `issueReport`    | `SelectionInput<T> → IssueReport<T>` | Source-aware diagnostic report      |
+
+## Integration overlap
+
+Use `mapAccepted` when each accepted source produces one value; use `expandAccepted` when it produces an array of values. `expandAccepted` accepts real arrays, including `[]`, and treats `Invalid` as a rejected source row. A runtime string, `Set`, other iterable, or nonarray value from its callback causes a whole `Err` with a `TypeError` cause. The checkpoint keeps previously expanded rows and inherited rejections, while the location identifies the failing source index and named rule. Thenables also cause a whole `Err` before array validation. Package-root registration in `src/index.ts` remains outside this module's assigned files.
