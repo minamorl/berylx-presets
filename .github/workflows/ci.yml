@@ -2,7 +2,7 @@ name: CI
 on: [push, pull_request]
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zeno]
     strategy:
       matrix:
         node: ['26.12.1']
